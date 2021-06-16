@@ -169,6 +169,9 @@ namespace Unverum
                 }
             }
 
+            // Move all enabled mods to top
+            Global.ModList = new ObservableCollection<Mod>(Global.ModList.ToList().OrderByDescending(x => x.enabled).ToList());
+
             await Task.Run(() =>
             {
                 App.Current.Dispatcher.Invoke((Action)delegate
@@ -397,7 +400,6 @@ namespace Unverum
                 return;
             }
 
-            ContextMenu contextMenu = element.ContextMenu;
             if (ModGrid.SelectedItem == null)
                 element.ContextMenu.Visibility = Visibility.Collapsed;
             else
@@ -431,20 +433,20 @@ namespace Unverum
             if (Global.config.Configs[Global.config.CurrentGame].ModsFolder != null && Directory.Exists(Global.config.Configs[Global.config.CurrentGame].ModsFolder))
             {
                 GameBox.IsEnabled = false;
-                ModGrid.IsHitTestVisible = false;
-                ConfigButton.IsHitTestVisible = false;
-                BuildButton.IsHitTestVisible = false;
-                LaunchButton.IsHitTestVisible = false;
-                OpenModsButton.IsHitTestVisible = false;
-                UpdateButton.IsHitTestVisible = false;
+                ModGrid.IsEnabled = false;
+                ConfigButton.IsEnabled = false;
+                BuildButton.IsEnabled = false;
+                LaunchButton.IsEnabled = false;
+                OpenModsButton.IsEnabled = false;
+                UpdateButton.IsEnabled = false;
                 Refresh();
                 await Build(Global.config.Configs[Global.config.CurrentGame].ModsFolder);
-                ModGrid.IsHitTestVisible = true;
-                ConfigButton.IsHitTestVisible = true;
-                BuildButton.IsHitTestVisible = true;
-                LaunchButton.IsHitTestVisible = true;
-                OpenModsButton.IsHitTestVisible = true;
-                UpdateButton.IsHitTestVisible = true;
+                ModGrid.IsEnabled = true;
+                ConfigButton.IsEnabled = true;
+                BuildButton.IsEnabled = true;
+                LaunchButton.IsEnabled = true;
+                OpenModsButton.IsEnabled = true;
+                UpdateButton.IsEnabled = true;
                 GameBox.IsEnabled = true;
                 MessageBox.Show($@"Finished building loadout and ready to launch!", "Notification", MessageBoxButton.OK);
             }
@@ -456,22 +458,30 @@ namespace Unverum
         {
             await Task.Run(() =>
             {
+                // Get other folders using the mods folder
                 string SplashFolder = null;
                 string MoviesFolder = null;
-                bool? CostumePatched = null;
+                string SoundsFolder = null;
+                var ContentFolder = new DirectoryInfo(Global.config.Configs[Global.config.CurrentGame].ModsFolder).Parent.Parent.FullName;
+                if (Directory.Exists($"{ContentFolder}{Global.s}Splash"))
+                    SplashFolder = $"{ContentFolder}{Global.s}Splash";
+                if (Directory.Exists($"{ContentFolder}{Global.s}Movies"))
+                    MoviesFolder = $"{ContentFolder}{Global.s}Movies";
+                else if (Directory.Exists($"{ContentFolder}{Global.s}CriWareData"))
+                    MoviesFolder = $"{ContentFolder}{Global.s}CriWareData{Global.s}Movie";
+                if (Directory.Exists($"{ContentFolder}{Global.s}Sound"))
+                    SoundsFolder = $"{ContentFolder}{Global.s}Sound";
+                else if (Directory.Exists($"{ContentFolder}{Global.s}CriWareData"))
+                    SoundsFolder = $"{ContentFolder}{Global.s}CriWareData";
                 // DBFZ specific
+                bool? CostumePatched = null;
                 if (Global.config.CurrentGame == "Dragon Ball FighterZ")
-                {
-                    var parent = Global.config.Configs[Global.config.CurrentGame].Launcher.Replace($"{Global.s}Binaries{Global.s}Win64{Global.s}RED-Win64-Shipping-eac-nop-loaded.exe", String.Empty);
-                    SplashFolder = $"{parent}{Global.s}Content{Global.s}Splash";
-                    MoviesFolder = $"{parent}{Global.s}Content{Global.s}Movies";
                     CostumePatched = Setup.CheckCostumePatch(Global.config.Configs[Global.config.CurrentGame].Launcher);
-                }
-                if (!ModLoader.Restart(path, MoviesFolder, SplashFolder))
+                if (!ModLoader.Restart(path, MoviesFolder, SplashFolder, SoundsFolder))
                     return;
                 List<string> mods = Global.config.Configs[Global.config.CurrentGame].ModList.Where(x => x.enabled).Select(y => $@"{Global.assemblyLocation}{Global.s}Mods{Global.s}{Global.config.CurrentGame}{Global.s}{y.name}").ToList();
                 mods.Reverse();
-                ModLoader.Build(path, mods, CostumePatched, MoviesFolder, SplashFolder);
+                ModLoader.Build(path, mods, CostumePatched, MoviesFolder, SplashFolder, SoundsFolder);
             });
         }
 
@@ -539,17 +549,42 @@ namespace Unverum
         }
         private void ModsFolder_Click(object sender, RoutedEventArgs e)
         {
-            var folderName = $@"{Global.assemblyLocation}{Global.s}Mods{Global.s}{Global.config.CurrentGame}";
-            if (Directory.Exists(folderName))
+            var choice = new AddChoiceWindow();
+            choice.ShowDialog();
+            if (choice.create != null && (bool)choice.create)
             {
-                try
+                var nameWindow = new EditWindow(null);
+                nameWindow.ShowDialog();
+                if (nameWindow.directory != null)
                 {
-                    Process process = Process.Start("explorer.exe", folderName);
-                    Global.logger.WriteLine($@"Opened {folderName}.", LoggerType.Info);
+                    OpenFileDialog dialog = new OpenFileDialog();
+                    dialog.DefaultExt = ".pak";
+                    dialog.Filter = "UE4 Package Files (*.pak)|*.pak";
+                    dialog.Title = $"Select .pak to add in {Path.GetFileName(nameWindow.directory)}";
+                    dialog.Multiselect = false;
+                    dialog.InitialDirectory = Global.assemblyLocation;
+                    dialog.ShowDialog();
+                    if (!String.IsNullOrEmpty(dialog.FileName))
+                    {
+                        Directory.CreateDirectory(nameWindow.directory);
+                        File.Copy(dialog.FileName, $"{nameWindow.directory}{Global.s}{Path.GetFileName(dialog.FileName)}", true);
+                    }
                 }
-                catch (Exception ex)
+            }
+            else if (choice.create != null && !(bool)choice.create) 
+            { 
+                var folderName = $"{Global.assemblyLocation}{Global.s}Mods{Global.s}{Global.config.CurrentGame}";
+                if (Directory.Exists(folderName))
                 {
-                    Global.logger.WriteLine($@"Couldn't open {folderName}. ({ex.Message})", LoggerType.Error);
+                    try
+                    {
+                        Process process = Process.Start("explorer.exe", folderName);
+                        Global.logger.WriteLine($@"Opened {folderName}.", LoggerType.Info);
+                    }
+                    catch (Exception ex)
+                    {
+                        Global.logger.WriteLine($@"Couldn't open {folderName}. ({ex.Message})", LoggerType.Error);
+                    }
                 }
             }
         }
@@ -697,6 +732,14 @@ namespace Unverum
             var item = button.DataContext as GameBananaRecord;
             new ModDownloader().BrowserDownload(Global.games[GameFilterBox.SelectedIndex], item);
         }
+        private void AltDownload_Click(object sender, RoutedEventArgs e)
+        {
+            Button button = sender as Button;
+            var item = button.DataContext as GameBananaRecord;
+            new AltLinkWindow(item.AlternateFileSources, item.Title, 
+                (GameFilterBox.SelectedValue as ComboBoxItem).Content.ToString().Trim().Replace(":", String.Empty),
+                item.Link.AbsoluteUri).ShowDialog();
+        }
         private void Homepage_Click(object sender, RoutedEventArgs e)
         {
             Button button = sender as Button;
@@ -751,27 +794,48 @@ namespace Unverum
         }
         private void MoreInfo_Click(object sender, RoutedEventArgs e)
         {
+            HomepageButton.Content = $"{(TypeBox.SelectedValue as ComboBoxItem).Content.ToString().Trim().TrimEnd('s')} Page";
             Button button = sender as Button;
             var item = button.DataContext as GameBananaRecord;
+            if (item.Compatible)
+                DownloadButton.Visibility = Visibility.Visible;
+            else
+                DownloadButton.Visibility = Visibility.Collapsed;
+            if (item.HasAltLinks)
+                AltButton.Visibility = Visibility.Visible;
+            else
+                AltButton.Visibility = Visibility.Collapsed;
             DescPanel.DataContext = button.DataContext;
+            MediaPanel.DataContext = button.DataContext;
             DescText.ScrollToHome();
             var text = "";
             text += item.ConvertedText;
             DescText.Document = ConvertToFlowDocument(text);
             ImageLeft.IsEnabled = true;
             ImageRight.IsEnabled = true;
+            BigImageLeft.IsEnabled = true;
+            BigImageRight.IsEnabled = true;
             imageCount = item.Media.Where(x => x.Type == "image").ToList().Count;
             imageCounter = 0;
             if (imageCount > 0)
             {
                 Grid.SetColumnSpan(DescText, 1);
                 ImagePanel.Visibility = Visibility.Visible;
-                Screenshot.Source = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+                var image = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+                Screenshot.Source = image;
+                BigScreenshot.Source = image;
                 CaptionText.Text = item.Media[imageCounter].Caption;
-                if (CaptionText.Text != null)
+                BigCaptionText.Text = item.Media[imageCounter].Caption;
+                if (!String.IsNullOrEmpty(CaptionText.Text))
+                {
+                    BigCaptionText.Visibility = Visibility.Visible;
                     CaptionText.Visibility = Visibility.Visible;
+                }
                 else
+                {
+                    BigCaptionText.Visibility = Visibility.Collapsed;
                     CaptionText.Visibility = Visibility.Collapsed;
+                }
             }
             else
             {
@@ -782,6 +846,8 @@ namespace Unverum
             {
                 ImageLeft.IsEnabled = false;
                 ImageRight.IsEnabled = false;
+                BigImageLeft.IsEnabled = false;
+                BigImageRight.IsEnabled = false;
             }
 
             DescPanel.Visibility = Visibility.Visible;
@@ -790,6 +856,15 @@ namespace Unverum
         {
             DescPanel.Visibility = Visibility.Collapsed;
         }
+        private void CloseMedia_Click(object sender, RoutedEventArgs e)
+        {
+            MediaPanel.Visibility = Visibility.Collapsed;
+        }
+
+        private void Image_Click(object sender, RoutedEventArgs e)
+        {
+            MediaPanel.Visibility = Visibility.Visible;
+        }
 
         private void ImageLeft_Click(object sender, RoutedEventArgs e)
         {
@@ -797,12 +872,21 @@ namespace Unverum
             var item = button.DataContext as GameBananaRecord;
             if (--imageCounter == -1)
                 imageCounter = imageCount - 1;
-            Screenshot.Source = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+            var image = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+            Screenshot.Source = image;
             CaptionText.Text = item.Media[imageCounter].Caption;
-            if (CaptionText.Text != null)
+            BigScreenshot.Source = image;
+            BigCaptionText.Text = item.Media[imageCounter].Caption;
+            if (!String.IsNullOrEmpty(CaptionText.Text))
+            {
+                BigCaptionText.Visibility = Visibility.Visible;
                 CaptionText.Visibility = Visibility.Visible;
+            }
             else
+            {
+                BigCaptionText.Visibility = Visibility.Collapsed;
                 CaptionText.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void ImageRight_Click(object sender, RoutedEventArgs e)
@@ -811,12 +895,21 @@ namespace Unverum
             var item = button.DataContext as GameBananaRecord;
             if (++imageCounter == imageCount)
                 imageCounter = 0;
-            Screenshot.Source = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+            var image = new BitmapImage(new Uri($"{item.Media[imageCounter].Base}/{item.Media[imageCounter].File}"));
+            Screenshot.Source = image;
             CaptionText.Text = item.Media[imageCounter].Caption;
-            if (CaptionText.Text != null)
+            BigScreenshot.Source = image;
+            BigCaptionText.Text = item.Media[imageCounter].Caption;
+            if (!String.IsNullOrEmpty(CaptionText.Text))
+            {
+                BigCaptionText.Visibility = Visibility.Visible;
                 CaptionText.Visibility = Visibility.Visible;
+            }
             else
+            {
+                BigCaptionText.Visibility = Visibility.Collapsed;
                 CaptionText.Visibility = Visibility.Collapsed;
+            }
         }
         private static bool selected = false;
 
@@ -1192,6 +1285,10 @@ namespace Unverum
                 grid.Columns = 4;
             else 
                 grid.Columns = 3;
+        }
+        private void OnResize(object sender, RoutedEventArgs e)
+        {
+            BigScreenshot.MaxHeight = ActualHeight - 240;
         }
 
         private void PageBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
