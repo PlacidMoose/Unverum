@@ -10,7 +10,7 @@ namespace Unverum
     {
         // Load all suffixes in an array  
         static readonly string[] suffixes =
-        { " Bytes", " KiB", " MiB", " GiB", " TiB", " PiB" };
+        { " Bytes", " KB", " MB", " GB", " TB", " PB" };
         public static string FormatSize(long bytes)
         {
             int counter = 0;
